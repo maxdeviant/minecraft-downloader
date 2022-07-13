@@ -1,63 +1,12 @@
-use std::collections::HashMap;
+mod manifest;
+
 use std::io::Cursor;
 use std::path::PathBuf;
 
 use reqwest::Url;
-use serde::Deserialize;
 use tokio::fs;
 
-#[derive(Debug, Deserialize)]
-struct LauncherManifest {
-    pub files: HashMap<String, LauncherEntry>,
-}
-
-impl LauncherManifest {
-    pub fn directories(&self) -> Vec<String> {
-        self.files
-            .iter()
-            .filter_map(|(key, entry)| match entry {
-                LauncherEntry::Directory => Some(key.clone()),
-                LauncherEntry::File(_) => None,
-            })
-            .collect()
-    }
-
-    pub fn files(self) -> Vec<(String, LauncherFile)> {
-        self.files
-            .into_iter()
-            .filter_map(|(key, entry)| match entry {
-                LauncherEntry::File(file) => Some((key, file)),
-                LauncherEntry::Directory => None,
-            })
-            .collect()
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum LauncherEntry {
-    Directory,
-    File(LauncherFile),
-}
-
-#[derive(Debug, Deserialize)]
-struct LauncherFile {
-    pub downloads: Downloads,
-    pub executable: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct Downloads {
-    pub raw: File,
-    pub lzma: Option<File>,
-}
-
-#[derive(Debug, Deserialize)]
-struct File {
-    pub sha1: String,
-    pub size: i32,
-    pub url: String,
-}
+use crate::manifest::LauncherManifest;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
