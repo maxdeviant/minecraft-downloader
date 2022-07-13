@@ -1,10 +1,36 @@
 use std::collections::HashMap;
+use std::io::Cursor;
+use std::path::PathBuf;
 
+use reqwest::Url;
 use serde::Deserialize;
+use tokio::fs;
 
 #[derive(Debug, Deserialize)]
 struct LauncherManifest {
     pub files: HashMap<String, LauncherEntry>,
+}
+
+impl LauncherManifest {
+    pub fn directories(&self) -> Vec<String> {
+        self.files
+            .iter()
+            .filter_map(|(key, entry)| match entry {
+                LauncherEntry::Directory => Some(key.clone()),
+                LauncherEntry::File(_) => None,
+            })
+            .collect()
+    }
+
+    pub fn files(self) -> Vec<(String, LauncherFile)> {
+        self.files
+            .into_iter()
+            .filter_map(|(key, entry)| match entry {
+                LauncherEntry::File(file) => Some((key, file)),
+                LauncherEntry::Directory => None,
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,7 +66,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .json::<LauncherManifest>()
         .await?;
 
-    println!("{:#?}", manifest);
+    let download_dir = "test";
+
+    for launcher_directory in manifest.directories() {
+        let mut directory = PathBuf::new();
+        directory.push(download_dir);
+        directory.push(launcher_directory);
+
+        fs::create_dir_all(directory).await?;
+    }
+
+    for (launcher_path, launcher_file) in manifest.files() {
+        let url = Url::parse(&launcher_file.downloads.raw.url)?;
+
+        let response = reqwest::get(url).await?;
+
+        let mut path = PathBuf::new();
+        path.push(download_dir);
+        path.push(launcher_path);
+
+        let mut file = fs::File::create(path).await?;
+        let mut content = Cursor::new(response.bytes().await?);
+
+        tokio::io::copy(&mut content, &mut file).await?;
+    }
 
     Ok(())
 }
